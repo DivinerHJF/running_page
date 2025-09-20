@@ -1,7 +1,8 @@
 import * as mapboxPolyline from '@mapbox/polyline';
 import gcoord from 'gcoord';
-import { WebMercatorViewport } from '@math.gl/web-mercator';
-import { RPGeometry } from '@/static/run_countries';
+import { WebMercatorViewport } from 'viewport-mercator-project';
+import { chinaGeojson, RPGeometry } from '@/static/run_countries';
+import worldGeoJson from '@surbowl/world-geo-json-zh/world.zh.json';
 import { chinaCities } from '@/static/city';
 import {
   MAIN_COLOR,
@@ -20,18 +21,8 @@ import {
   SNOWBOARD_COLOR,
   TRAIL_RUN_COLOR,
   RICH_TITLE,
-  MAP_TILE_STYLES,
-  MAP_TILE_STYLE_DARK,
-  getRuntimeSingleColor,
-  MAIN_COLOR_LIGHT,
 } from './const';
-import {
-  FeatureCollection,
-  LineString,
-  Feature,
-  GeoJsonProperties,
-} from 'geojson';
-import { getMapThemeFromCurrentTheme } from '@/hooks/useTheme';
+import { FeatureCollection, LineString } from 'geojson';
 
 export type Coordinate = [number, number];
 
@@ -43,7 +34,6 @@ export interface Activity {
   distance: number;
   moving_time: string;
   type: string;
-  subtype: string;
   start_date: string;
   start_date_local: string;
   location_country?: string | null;
@@ -61,9 +51,8 @@ const titleForShow = (run: Activity): string => {
   if (run.name) {
     name = run.name;
   }
-  return `${name} ${date} ${distance} KM ${
-    !run.summary_polyline ? '(No map data for this workout)' : ''
-  }`;
+  return `${name} ${date} ${distance} KM ${!run.summary_polyline ? '(No map data for this workout)' : ''
+    }`;
 };
 
 const formatPace = (d: number): string => {
@@ -99,9 +88,10 @@ const formatRunTime = (moving_time: string): string => {
 
 // for scroll to the map
 const scrollToMap = () => {
-  const mapContainer = document.getElementById('map-container');
-  if (mapContainer) {
-    mapContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const el = document.querySelector('.fl.w-100.w-70-l');
+  const rect = el?.getBoundingClientRect();
+  if (rect) {
+    window.scroll(rect.left + window.scrollX, rect.top + window.scrollY);
   }
 };
 
@@ -125,7 +115,7 @@ const extractDistricts = (str: string): string[] => {
   }
 
   return locations;
-};
+}
 
 const extractCoordinate = (str: string): [number, number] | null => {
   const pattern = /'latitude': ([-]?\d+\.\d+).*?'longitude': ([-]?\d+\.\d+)/;
@@ -229,7 +219,7 @@ const pathForRun = (run: Activity): Coordinate[] => {
       }
     }
     return c;
-  } catch (_err) {
+  } catch (err) {
     return [];
   }
 };
@@ -238,11 +228,11 @@ const geoJsonForRuns = (runs: Activity[]): FeatureCollection<LineString> => ({
   type: 'FeatureCollection',
   features: runs.map((run) => {
     const points = pathForRun(run);
-    const color = colorFromType(run.type);
+
     return {
       type: 'Feature',
       properties: {
-        color: color,
+        'color': colorFromType(run.type),
       },
       geometry: {
         type: 'LineString',
@@ -254,20 +244,10 @@ const geoJsonForRuns = (runs: Activity[]): FeatureCollection<LineString> => ({
   }),
 });
 
-const geoJsonForMap = async (): Promise<FeatureCollection<RPGeometry>> => {
-  const [{ chinaGeojson }, worldGeoJson] = await Promise.all([
-    import('@/static/run_countries'),
-    import('@surbowl/world-geo-json-zh/world.zh.json'),
-  ]);
-
-  return {
-    type: 'FeatureCollection',
-    features: [
-      ...worldGeoJson.default.features,
-      ...chinaGeojson.features,
-    ] as Feature<RPGeometry, GeoJsonProperties>[],
-  };
-};
+const geoJsonForMap = (): FeatureCollection<RPGeometry> => ({
+  type: 'FeatureCollection',
+  features: worldGeoJson.features.concat(chinaGeojson.features),
+})
 
 const titleForType = (type: string): string => {
   switch (type) {
@@ -304,30 +284,32 @@ const titleForType = (type: string): string => {
     default:
       return RUN_TITLES.RUN_TITLE;
   }
-};
+}
 
 const typeForRun = (run: Activity): string => {
-  const type = run.type;
+  const type = run.type
   var distance = run.distance / 1000;
   switch (type) {
     case 'Run':
       if (distance >= 40) {
         return 'Full Marathon';
-      } else if (distance > 20) {
+      }
+      else if (distance > 20) {
         return 'Half Marathon';
       }
       return 'Run';
     case 'Trail Run':
       if (distance >= 40) {
         return 'Full Marathon';
-      } else if (distance > 20) {
+      }
+      else if (distance > 20) {
         return 'Half Marathon';
       }
       return 'Trail Run';
     default:
       return type;
   }
-};
+}
 
 const titleForRun = (run: Activity): string => {
   const type = run.type;
@@ -337,20 +319,21 @@ const titleForRun = (run: Activity): string => {
       return run.name;
     }
     // 2. try to use location+type if the location is available, eg. 'Shanghai Run'
-    const { city } = locationForRun(run);
+    const { city, province } = locationForRun(run);
     const activity_sport = titleForType(typeForRun(run));
     if (city && city.length > 0 && activity_sport.length > 0) {
       return `${city} ${activity_sport}`;
     }
   }
   // 3. use time+length if location or type is not available
-  if (type == 'Run' || type == 'Trail Run') {
-    const runDistance = run.distance / 1000;
-    if (runDistance >= 40) {
-      return RUN_TITLES.FULL_MARATHON_RUN_TITLE;
-    } else if (runDistance > 20) {
-      return RUN_TITLES.HALF_MARATHON_RUN_TITLE;
-    }
+  if (type == 'Run' || type == 'Trail Run'){
+      const runDistance = run.distance / 1000;
+      if (runDistance >= 40) {
+        return RUN_TITLES.FULL_MARATHON_RUN_TITLE;
+      }
+      else if (runDistance > 20) {
+        return RUN_TITLES.HALF_MARATHON_RUN_TITLE;
+      }
   }
   return titleForType(type);
 };
@@ -358,31 +341,31 @@ const titleForRun = (run: Activity): string => {
 const colorFromType = (workoutType: string): string => {
   switch (workoutType) {
     case 'Run':
-      return getRuntimeSingleColor(RUN_COLOR);
+      return RUN_COLOR;
     case 'Trail Run':
-      return getRuntimeSingleColor(TRAIL_RUN_COLOR);
+      return TRAIL_RUN_COLOR;
     case 'Ride':
     case 'Indoor Ride':
-      return getRuntimeSingleColor(RIDE_COLOR);
+      return RIDE_COLOR;
     case 'VirtualRide':
-      return getRuntimeSingleColor(VIRTUAL_RIDE_COLOR);
+      return VIRTUAL_RIDE_COLOR;
     case 'Hike':
-      return getRuntimeSingleColor(HIKE_COLOR);
+      return HIKE_COLOR;
     case 'Rowing':
-      return getRuntimeSingleColor(ROWING_COLOR);
+      return ROWING_COLOR;
     case 'Swim':
-      return getRuntimeSingleColor(SWIM_COLOR);
+      return SWIM_COLOR;
     case 'RoadTrip':
-      return getRuntimeSingleColor(ROAD_TRIP_COLOR);
+      return ROAD_TRIP_COLOR;
     case 'Flight':
-      return getRuntimeSingleColor(FLIGHT_COLOR);
+      return FLIGHT_COLOR;
     case 'Kayaking':
-      return getRuntimeSingleColor(KAYAKING_COLOR);
+      return KAYAKING_COLOR;
     case 'Snowboard':
     case 'Ski':
-      return getRuntimeSingleColor(SNOWBOARD_COLOR);
+      return SNOWBOARD_COLOR;
     default:
-      return getRuntimeSingleColor();
+      return MAIN_COLOR;
   }
 };
 
@@ -445,21 +428,15 @@ const filterTitleRuns = (run: Activity, title: string) =>
   titleForRun(run) === title;
 
 const filterTypeRuns = (run: Activity, type: string) => {
-  switch (type) {
+  switch (type){
     case 'Full Marathon':
-      return (
-        (run.type === 'Run' || run.type === 'Trail Run') && run.distance > 40000
-      );
+      return (run.type === 'Run' || run.type === 'Trail Run') && run.distance > 40000
     case 'Half Marathon':
-      return (
-        (run.type === 'Run' || run.type === 'Trail Run') &&
-        run.distance < 40000 &&
-        run.distance > 20000
-      );
+      return (run.type === 'Run' || run.type === 'Trail Run') && run.distance < 40000 && run.distance > 20000
     default:
-      return run.type === type;
+      return run.type === type
   }
-};
+}
 
 const filterAndSortRuns = (
   activities: Activity[],
@@ -467,13 +444,13 @@ const filterAndSortRuns = (
   filterFunc: (_run: Activity, _bvalue: string) => boolean,
   sortFunc: (_a: Activity, _b: Activity) => number,
   item2: string | null,
-  filterFunc2: ((_run: Activity, _bvalue: string) => boolean) | null
+  filterFunc2: ((_run: Activity, _bvalue: string) => boolean) | null,
 ) => {
   let s = activities;
   if (item !== 'Total') {
     s = activities.filter((run) => filterFunc(run, item));
   }
-  if (filterFunc2 != null && item2 != null) {
+  if(filterFunc2 != null && item2 != null){
     s = s.filter((run) => filterFunc2(run, item2));
   }
   return s.sort(sortFunc);
@@ -486,55 +463,6 @@ const sortDateFunc = (a: Activity, b: Activity) => {
   );
 };
 const sortDateFuncReverse = (a: Activity, b: Activity) => sortDateFunc(b, a);
-
-const getMapStyle = (vendor: string, styleName: string, token: string) => {
-  const style = (MAP_TILE_STYLES as any)[vendor][styleName];
-  if (!style) {
-    return MAP_TILE_STYLES.default;
-  }
-  if (vendor === 'maptiler' || vendor === 'stadiamaps') {
-    return style + token;
-  }
-  return style;
-};
-
-const isTouchDevice = () => {
-  if (typeof window === 'undefined') return false;
-  return (
-    'ontouchstart' in window ||
-    navigator.maxTouchPoints > 0 ||
-    window.innerWidth <= 768
-  ); // Consider small screens as touch devices
-};
-
-/**
- * Determines the appropriate map theme based on current settings
- * @returns The map theme style to use
- */
-const getMapTheme = (): string => {
-  if (typeof window === 'undefined') return MAP_TILE_STYLE_DARK;
-
-  // Check for explicit theme in DOM
-  const dataTheme = document.documentElement.getAttribute('data-theme') as
-    | 'light'
-    | 'dark'
-    | null;
-
-  // Check for saved theme in localStorage
-  const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
-
-  // Determine theme based on priority:
-  // 1. DOM attribute
-  // 2. localStorage
-  // 3. Default to dark theme
-  if (dataTheme) {
-    return getMapThemeFromCurrentTheme(dataTheme);
-  } else if (savedTheme) {
-    return getMapThemeFromCurrentTheme(savedTheme);
-  } else {
-    return getMapThemeFromCurrentTheme('dark');
-  }
-};
 
 export {
   titleForShow,
@@ -559,7 +487,4 @@ export {
   colorFromType,
   formatRunTime,
   convertMovingTime2Sec,
-  getMapStyle,
-  isTouchDevice,
-  getMapTheme,
 };
